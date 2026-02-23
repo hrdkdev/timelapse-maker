@@ -6,10 +6,12 @@ import cv2
 from datetime import datetime
 import re
 
+
 @dataclass
 class Resolution:
     width: int
     height: int
+
 
 def add_timestamp(frame):
     # Get current local time in military format (HH:MM)
@@ -30,52 +32,90 @@ def add_timestamp(frame):
     text_y = text_size[1] + 20
 
     # Put text on frame
-    cv2.putText(frame, time_str, (text_x, text_y), font, font_scale, color, font_thickness)
+    cv2.putText(
+        frame, time_str, (text_x, text_y), font, font_scale, color, font_thickness
+    )
 
     return frame
+
 
 def find_last_frame_number(output_dir: Path) -> int:
     """Find the highest frame number in the output directory."""
     frame_files = list(output_dir.glob("frame_*.jpg"))
     if not frame_files:
         return 0
-    
+
     max_frame = 0
     for frame_file in frame_files:
         # Extract frame number from filename (e.g., frame_0001.jpg -> 1)
-        match = re.search(r'frame_(\d+)\.jpg', frame_file.name)
+        match = re.search(r"frame_(\d+)\.jpg", frame_file.name)
         if match:
             frame_num = int(match.group(1))
             max_frame = max(max_frame, frame_num)
-    
+
     return max_frame
+
 
 def capture_timelapse(
     duration: float,
     interval: int,
     output_dir: Path,
     use_timestamp: bool = True,
-    resolution: Resolution = None,
+    resolution: Resolution | None = None,
     resume: bool = False,
+    camera_index: int | None = None,
 ):
     # Try different camera indices
     camera = None
-    for i in range(10):
-        test_camera = cv2.VideoCapture(0)
+
+    # If camera_index is specified, try that first
+    if camera_index is not None:
+        test_camera = cv2.VideoCapture(camera_index)
         if test_camera.isOpened():
-            # Test if we can actually read from it
             ret, frame = test_camera.read()
             if ret and frame is not None:
                 camera = test_camera
-                print(f"Found working camera at index {i}")
-                break
+                print(f"Using specified camera at index {camera_index}")
+            else:
+                test_camera.release()
+                print(f"Specified camera index {camera_index} not working, scanning...")
+        else:
+            test_camera.release()
+            print(f"Cannot open camera at index {camera_index}, scanning...")
+
+    # If no camera yet, try to find virtual webcam at index 20 (IP Webcam device)
+    if camera is None:
+        test_camera = cv2.VideoCapture(20)
+        if test_camera.isOpened():
+            ret, frame = test_camera.read()
+            if ret and frame is not None:
+                camera = test_camera
+                print(f"Found IP Webcam virtual device at index 20")
             else:
                 test_camera.release()
         else:
             test_camera.release()
-    
+
+    # If still no camera, scan indices 0-10
     if camera is None:
-        raise RuntimeError("No working camera found. Please connect a camera device or use a test mode.")
+        for i in range(10):
+            test_camera = cv2.VideoCapture(i)
+            if test_camera.isOpened():
+                # Test if we can actually read from it
+                ret, frame = test_camera.read()
+                if ret and frame is not None:
+                    camera = test_camera
+                    print(f"Found working camera at index {i}")
+                    break
+                else:
+                    test_camera.release()
+            else:
+                test_camera.release()
+
+    if camera is None:
+        raise RuntimeError(
+            "No working camera found. Please connect a camera device or use a test mode."
+        )
 
     # Set resolution if specified
     if resolution:
@@ -88,16 +128,20 @@ def capture_timelapse(
     print(f"Camera resolution: {width}x{height}")
 
     num_frames = int(duration // interval)
-    
+
     # Determine starting frame number
     start_frame = 1
     if resume:
         last_frame = find_last_frame_number(output_dir)
         if last_frame > 0:
             start_frame = last_frame + 1
-            print(f"Resuming from frame {start_frame} (found {last_frame} existing frames)")
+            print(
+                f"Resuming from frame {start_frame} (found {last_frame} existing frames)"
+            )
         else:
-            print("Resume requested but no existing frames found. Starting from frame 1.")
+            print(
+                "Resume requested but no existing frames found. Starting from frame 1."
+            )
 
     try:
         for i in range(start_frame, start_frame + num_frames):
@@ -114,7 +158,9 @@ def capture_timelapse(
             filename = output_dir / f"frame_{i:04d}.jpg"
             cv2.imwrite(str(filename), frame)
             total_frames = start_frame + num_frames - 1
-            print(f"Captured frame {i}/{total_frames}{' with timestamp' if use_timestamp else ''}")
+            print(
+                f"Captured frame {i}/{total_frames}{' with timestamp' if use_timestamp else ''}"
+            )
 
             if i < start_frame + num_frames - 1:
                 time.sleep(interval)
@@ -125,6 +171,7 @@ def capture_timelapse(
         # Release the camera
         camera.release()
         print("Timelapse capture completed.")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -153,8 +200,13 @@ def main():
     parser.add_argument(
         "--add-timestamp",
         action="store_true",
-        default=True,
-        help="Add military time timestamp to frames (default: True)",
+        default=False,
+        help="Add military time timestamp to frames (default: False)",
+    )
+    parser.add_argument(
+        "--no-timestamp",
+        action="store_true",
+        help="Disable timestamp (deprecated, timestamps are off by default)",
     )
     parser.add_argument("--width", type=int, help="Custom width for capture")
     parser.add_argument("--height", type=int, help="Custom height for capture")
@@ -162,6 +214,13 @@ def main():
         "--resume",
         action="store_true",
         help="Resume from the last captured frame instead of starting fresh",
+    )
+    parser.add_argument(
+        "--camera-index",
+        "-c",
+        type=int,
+        default=None,
+        help="Specific camera index to use (default: auto-detect, prioritizing /dev/video20)",
     )
 
     args = parser.parse_args()
@@ -182,8 +241,9 @@ def main():
         use_timestamp=args.add_timestamp,
         resolution=resolution,
         resume=args.resume,
+        camera_index=args.camera_index,
     )
+
 
 if __name__ == "__main__":
     main()
-

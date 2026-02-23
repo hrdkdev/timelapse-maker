@@ -2,6 +2,22 @@
 
 Python scripts to create camera timelapses on desktop PCs, raspberry pis, and macbooks.
 
+## Phone as Webcam (NEW!)
+
+You can now use your Android phone as a webcam over WiFi! Perfect for recording study/work timelapses for social media accountability.
+
+**Quick start:**
+1. See [PHONE_WEBCAM_SETUP.md](PHONE_WEBCAM_SETUP.md) for detailed setup
+2. Run `./QUICK_START.sh` for quick reference commands
+
+**Optimized for Twitter timelapses:**
+- 720p resolution
+- 30-second intervals
+- 24fps output
+- Auto-compressed for social media
+
+---
+
 # Requirements
 - Python >= 3.11
 - Git

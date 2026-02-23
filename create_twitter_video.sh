@@ -1,0 +1,157 @@
+#!/bin/bash
+
+# Create Twitter-optimized timelapse video from captured images
+# - 24fps for smooth playback
+# - H.264 codec for maximum compatibility
+# - Optimized compression for Twitter
+
+set -e
+
+PROJECT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+VIDEO_DIR="$PROJECT_DIR/videos"
+
+# Default values
+IMAGE_FOLDER="$PROJECT_DIR/timelapse_imgs"
+OUTPUT_VIDEO=""
+FRAMERATE=24
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --input|-i)
+      IMAGE_FOLDER="$2"
+      shift 2
+      ;;
+    --output|-o)
+      OUTPUT_VIDEO="$2"
+      shift 2
+      ;;
+    --framerate|-f)
+      FRAMERATE="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --input, -i <dir>          Input image folder (default: timelapse_imgs)"
+      echo "  --output, -o <file>        Output video file (default: auto-generated)"
+      echo "  --framerate, -f <fps>      Video framerate (default: 24)"
+      echo "  --help, -h                 Show this help message"
+      echo ""
+      echo "Example: $0 --input timelapse_imgs --output my_session.mp4"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Run '$0 --help' for usage information"
+      exit 1
+      ;;
+  esac
+done
+
+# Check if image folder exists
+if [ ! -d "$IMAGE_FOLDER" ]; then
+  echo "ERROR: Image folder not found: $IMAGE_FOLDER"
+  exit 1
+fi
+
+# Count images
+NUM_IMAGES=$(find "$IMAGE_FOLDER" -name "*.jpg" | wc -l)
+if [ "$NUM_IMAGES" -eq 0 ]; then
+  echo "ERROR: No images found in $IMAGE_FOLDER"
+  exit 1
+fi
+
+# Calculate video duration
+VIDEO_DURATION=$(echo "scale=2; $NUM_IMAGES / $FRAMERATE" | bc)
+
+echo "=== Creating Twitter-Optimized Video ==="
+echo "Input: $IMAGE_FOLDER"
+echo "Images: $NUM_IMAGES frames"
+echo "Framerate: ${FRAMERATE}fps"
+echo "Expected duration: ${VIDEO_DURATION}s"
+echo ""
+
+# Create videos directory
+mkdir -p "$VIDEO_DIR"
+
+# Generate output filename if not specified
+if [ -z "$OUTPUT_VIDEO" ]; then
+  # Format: YYYY_monDD_HHhMM.mp4 (e.g., 2024_feb21_14h30.mp4)
+  TIMESTAMP=$(date +%Y_%b%d_%Hh%M | tr '[:upper:]' '[:lower:]')
+  OUTPUT_VIDEO="$VIDEO_DIR/session_${TIMESTAMP}.mp4"
+fi
+
+# Ensure output has .mp4 extension
+if [[ ! "$OUTPUT_VIDEO" =~ \.mp4$ ]]; then
+  OUTPUT_VIDEO="${OUTPUT_VIDEO}.mp4"
+fi
+
+# If output doesn't have a path, put it in videos dir
+if [[ ! "$OUTPUT_VIDEO" =~ / ]]; then
+  OUTPUT_VIDEO="$VIDEO_DIR/$OUTPUT_VIDEO"
+fi
+
+echo "Output: $OUTPUT_VIDEO"
+echo ""
+echo "Creating video with optimized settings for Twitter..."
+
+# Use create_timelapse.py but with modified settings for 24fps
+cd "$PROJECT_DIR"
+
+# Create frames list
+FRAMES_LIST="$PROJECT_DIR/frames_twitter.txt"
+find "$IMAGE_FOLDER" -name "*.jpg" | sort -V | while read img; do
+  echo "file '$img'" >> "$FRAMES_LIST"
+done
+
+# Create video with Twitter-optimized settings
+ffmpeg -y \
+  -f concat \
+  -safe 0 \
+  -i "$FRAMES_LIST" \
+  -framerate "$FRAMERATE" \
+  -c:v libx264 \
+  -pix_fmt yuv420p \
+  -preset medium \
+  -crf 23 \
+  -movflags +faststart \
+  "$OUTPUT_VIDEO"
+
+# Clean up
+rm -f "$FRAMES_LIST"
+
+# Get file size
+FILE_SIZE=$(du -h "$OUTPUT_VIDEO" | cut -f1)
+
+echo ""
+echo "=== Video Created Successfully ==="
+echo "Output: $OUTPUT_VIDEO"
+echo "Duration: ${VIDEO_DURATION}s"
+echo "File size: $FILE_SIZE"
+echo ""
+
+# Check Twitter limits
+VIDEO_SIZE_MB=$(du -m "$OUTPUT_VIDEO" | cut -f1)
+if [ "$VIDEO_SIZE_MB" -gt 512 ]; then
+  echo "WARNING: File size exceeds Twitter's 512MB limit!"
+  echo "Current size: ${VIDEO_SIZE_MB}MB"
+  echo ""
+fi
+
+DURATION_INT=$(echo "$VIDEO_DURATION" | cut -d. -f1)
+if [ "$DURATION_INT" -gt 140 ]; then
+  echo "WARNING: Video duration exceeds Twitter's 140s (2:20) limit!"
+  echo "Current duration: ${VIDEO_DURATION}s"
+  echo "Consider reducing the recording duration or increasing the interval."
+  echo ""
+fi
+
+echo "Twitter upload tips:"
+echo "  - Max duration: 140 seconds (2:20)"
+echo "  - Max file size: 512MB"
+echo "  - Supported formats: MP4, MOV"
+echo "  - This video is optimized for Twitter with H.264 codec"
+echo ""
+echo "Ready to upload to Twitter!"
