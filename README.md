@@ -2,6 +2,8 @@
 
 Python scripts to create camera timelapses on desktop PCs, raspberry pis, and macbooks.
 
+og - https://github.com/Infatoshi/timelapse-maker
+
 ## Phone as Webcam (NEW!)
 
 You can now use your Android phone as a webcam over WiFi! Perfect for recording study/work timelapses for social media accountability.
